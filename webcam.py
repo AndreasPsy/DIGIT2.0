@@ -1,3 +1,5 @@
+# I think this file is me messing around with opencv and displaying video feed previews
+
 import cv2
 
 cv2.namedWindow("preview")
