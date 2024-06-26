@@ -1,0 +1,120 @@
+from digit_dot_tracking import Point2DMatcher
+from Imports.MaskedVideo import start_cam, cap_array, contrast, adap_thresh, conv_feed, disp_array
+from Imports.SockSERVER import setupServer, ConnectConfirm, conv_img
+from libcamera import controls
+from PIL import Image as im
+from numpy.typing import NDArray
+import numpy as np
+import time
+import cv2
+import imutils
+import faulthandler
+import time
+
+
+
+def detect_marker_centers(
+    img: NDArray[np.uint8]
+) -> tuple[NDArray[np.double], NDArray[np.uint8]]:
+    # Find external contours in the image
+    detected_contours = cv2.findContours(
+        img.copy(), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+    )
+    detected_contours = imutils.grab_contours(detected_contours)
+    
+    # Iterate over detected contours to find centers of markers
+    marker_centers = []
+    contour_image = img.copy()
+
+    for (i, contour) in enumerate(detected_contours):
+        # Compute the center of the contour
+        if cv2.contourArea(contour) > 1000 or cv2.contourArea(contour) < 20:
+            continue
+        m = cv2.moments(contour)
+        cx = int(m["m10"] / (m["m00"] + 1e-7))
+        cy = int(m["m01"] / (m["m00"] + 1e-7))
+        if cx and cy != 0:
+            marker_centers.append([cx, cy])
+        # draw the contour on a copy to publish as debugging tool
+        cv2.drawContours(contour_image, [contour], -1, (255, 0, 255), 1)
+        disp_array("contours", contour_image)
+    
+        if cv2.waitKey(1) == ord('q'): 
+            break
+
+    # return the image with contours drawn on it as well - Jimmy
+    return np.asarray(marker_centers), contour_image
+
+def get_marker_displacements(marker_centers: NDArray[np.double]) -> NDArray[np.double]:
+    # Below should be its own function
+    mark_centers = marker_centers.tolist()
+    point_matcher.update_detected_points(marker_centers)
+    point_matcher.match_points()
+    (
+        initial_x_positions,
+        initial_y_positions,
+        current_x_positions,
+        current_y_positions,
+        _,
+    ) = point_matcher.calc_marker_displacements()
+
+    initial_x_positions = np.asarray(initial_x_positions)
+    initial_y_positions = np.asarray(initial_y_positions)
+    current_x_positions = np.asarray(current_x_positions)
+    current_y_positions = np.asarray(current_y_positions)
+
+    marker_displacements = np.stack(
+        [
+            current_x_positions - initial_x_positions,
+           current_y_positions - initial_y_positions,
+        ],
+        axis=-1,
+    )
+
+    return marker_displacements
+
+if __name__ == "__main__":
+    faulthandler.enable()
+    sock = setupServer()
+    Client_Address = ConnectConfirm(sock)
+    
+    point_matcher = Point2DMatcher(
+        # Put actual arguments based on specific digit
+        num_grid_rows=5, # Number of dot rows
+        num_grid_cols=6, # Number of dot columns
+        camera_fps=30,
+        point0_x_coord=150, # (Approximate) X position, in pixels, of top left dot center (with no deformation)
+        point0_y_coord=170, # (Approximate) Y position, in pixels, of top left dot center (with no deformation)
+        x_grid_spacing=50, # (Approximate) distance, in pixels, between dot centers between columns (x-axis)
+        y_grid_spacing=50, # (Approximate) distance, in pixels, between dot centers between rows (y-axis)
+    )
+    
+    feed = start_cam(0)
+    feed.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 200})
+    
+    time.sleep(1)
+    
+    while (True):
+        #arr1 = cap_array(feed)
+        #arr1_con = contrast(arr1)
+        #img = adap_thresh(arr1_con, 51, 7)
+    
+        #if cv2.waitKey(1) == ord('q'):
+            #break
+        
+        img = conv_feed(feed)
+        disp_array('Image',img)
+        
+        if cv2.waitKey(1) == ord('q'): 
+            break
+        
+        marker_centers, contour_image = detect_marker_centers(img.copy())
+        #print(marker_centers)
+        marker_displacements = get_marker_displacements(marker_centers)
+        
+        #print(marker_displacements.shape)
+        
+        bytesToSend = marker_displacements.tobytes()
+        sock.sendto(bytesToSend, Client_Address)
+        
+        #print(marker_displacements)
