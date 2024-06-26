@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=42", "pybind11>=2.6"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "digit_dot_tracking"
+version = "0.0.0"
+dependencies = [
+    "numpy",  # For multi-dimensional array support
+    "imutils",  # For multi-dimensional array support
+    "digit-interface",
+    "pybind11",
+    "opencv-contrib-python"
+]
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+namespaces = true
+where = ["."]
