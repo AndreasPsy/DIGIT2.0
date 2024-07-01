@@ -1,3 +1,6 @@
+#I (Andreas) only slightly altered detect_marker_centers and get_marker_displacements to work with the rest of my code, they were originally written by grad students Jimmy Penaloza, Cole Ten, and Evan Harber
+#Everything in the digit_dot_tracking folder was entirely written by the above grad students
+
 from digit_dot_tracking import Point2DMatcher
 from Imports.MaskedVideo import start_cam, cap_array, contrast, adap_thresh, conv_feed, disp_array
 from Imports.SockSERVER import setupServer, ConnectConfirm, conv_img
@@ -10,8 +13,6 @@ import cv2
 import imutils
 import faulthandler
 import time
-
-
 
 def detect_marker_centers(
     img: NDArray[np.uint8]
@@ -45,8 +46,9 @@ def detect_marker_centers(
     # return the image with contours drawn on it as well - Jimmy
     return np.asarray(marker_centers), contour_image
 
+#Find distance between centers of contours and initial positions
 def get_marker_displacements(marker_centers: NDArray[np.double]) -> NDArray[np.double]:
-    # Below should be its own function
+    #Find Initial Positions
     mark_centers = marker_centers.tolist()
     point_matcher.update_detected_points(marker_centers)
     point_matcher.match_points()
@@ -58,6 +60,7 @@ def get_marker_displacements(marker_centers: NDArray[np.double]) -> NDArray[np.d
         _,
     ) = point_matcher.calc_marker_displacements()
 
+    #convert to numpy array
     initial_x_positions = np.asarray(initial_x_positions)
     initial_y_positions = np.asarray(initial_y_positions)
     current_x_positions = np.asarray(current_x_positions)
@@ -79,7 +82,7 @@ if __name__ == "__main__":
     Client_Address = ConnectConfirm(sock)
     
     point_matcher = Point2DMatcher(
-        # Put actual arguments based on specific digit
+        # Replace arguments based on specific digit
         num_grid_rows=5, # Number of dot rows
         num_grid_cols=6, # Number of dot columns
         camera_fps=30,
@@ -88,33 +91,24 @@ if __name__ == "__main__":
         x_grid_spacing=50, # (Approximate) distance, in pixels, between dot centers between columns (x-axis)
         y_grid_spacing=50, # (Approximate) distance, in pixels, between dot centers between rows (y-axis)
     )
-    
+
+    #start video feed and set focus to closest setting
     feed = start_cam(0)
     feed.set_controls({"AfMode": controls.AfModeEnum.Manual, "LensPosition": 200})
-    
+
+    #allow lens time to focus
     time.sleep(1)
     
     while (True):
-        #arr1 = cap_array(feed)
-        #arr1_con = contrast(arr1)
-        #img = adap_thresh(arr1_con, 51, 7)
-    
-        #if cv2.waitKey(1) == ord('q'):
-            #break
-        
+        #convert frame from RGB picture to Black and White, Adaptively Thresholded numpy array (see MaskedVideo.py in imports folder)
         img = conv_feed(feed)
-        disp_array('Image',img)
         
         if cv2.waitKey(1) == ord('q'): 
             break
-        
+
         marker_centers, contour_image = detect_marker_centers(img.copy())
-        #print(marker_centers)
         marker_displacements = get_marker_displacements(marker_centers)
         
-        #print(marker_displacements.shape)
-        
+        #send displacement data through socket connection
         bytesToSend = marker_displacements.tobytes()
         sock.sendto(bytesToSend, Client_Address)
-        
-        #print(marker_displacements)
